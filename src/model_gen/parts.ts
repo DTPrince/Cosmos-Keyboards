@@ -83,7 +83,7 @@ async function main() {
   await genPart('switch-cherry-mx')
   await genPart('switch-evqwgd001')
   await genPart('switch-joystick-joycon-adafruit')
-  await genPart('switch-thumbstick')
+  await genPart('switch-thumbstick-kailh-GM-4-0')
   await genUC('rp2040-black-usb-c-aliexpress', {}, [
     { start: 2.54, align: { side: 'left', offset: 2.54 }, ...defaults },
     { start: 2.54, align: { side: 'right', offset: 2.54 }, ...defaults },

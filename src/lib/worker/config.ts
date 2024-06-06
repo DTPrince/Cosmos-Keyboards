@@ -162,7 +162,7 @@ interface CuttleKeycapKey extends CuttleBaseKey {
 }
 
 interface CuttleBasicKey extends CuttleBaseKey {
-  type: 'ec11' | 'oled-128x32-0.91in-adafruit' | 'oled-128x32-0.91in-dfrobot' | 'evqwgd001' | 'joystick-joycon-adafruit' | 'joystick-ps2-40x45' | 'thumbstick'
+  type: 'ec11' | 'oled-128x32-0.91in-adafruit' | 'oled-128x32-0.91in-dfrobot' | 'evqwgd001' | 'joystick-joycon-adafruit' | 'joystick-ps2-40x45' | 'thumbstick-kailh-GM-4-0'
 }
 
 interface CuttleBlankKey extends CuttleBaseKey {
@@ -248,6 +248,10 @@ export const MAP_CONNECTOR: Record<CONNECTOR, Cuttleform['connector']> = {
 export const MAP_ENCODER: Record<ENCODER, 'ec11' | 'evqwgd001'> = {
   [ENCODER.EC11]: 'ec11',
   [ENCODER.EVQWGD001]: 'evqwgd001',
+}
+
+export const MAP_THUMBSTICK: Record<THUMBSTICK, 'thumbstick-kailh-GM-4-0'> = {
+  [THUMBSTICK.THUMBSTICK_KAILH_GM_4_0] : 'thumbstick-kailh-GM-4-0',
 }
 
 export const MAP_CONNECTOR_SIZE: Record<CONNECTOR_SIZE, Cuttleform['connectorSizeUSB']> = {
@@ -902,7 +906,7 @@ const ID_TO_TYPE: Record<number, CuttleKey['type']> = {
   5: 'cirque-40mm',
   6: 'evqwgd001',
   7: 'joystick-joycon-adafruit',
-  8: 'thumbstick'
+  8: 'thumbstick_kailh_GM_4_0'
 }
 const TYPE_TO_ID = reverseMap(ID_TO_TYPE)
 

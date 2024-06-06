@@ -24,7 +24,7 @@ export const PART_NAMES: Record<CuttleKey['type'], string> = {
   'cirque-35mm': 'Cirque 35 mm Flat Circle Trackpads',
   'cirque-40mm': 'Cirque 40 mm Flat Circle Trackpads',
   'joystick-ps2-40x45': 'PS2 style joystick module',
-  'thumbstick': '3D-printable 4-way thumbstick for thumb cluster'
+  'thumbstick-kailh-GM-4-0': '3D-printable 4-way thumbstick'
 }
 
 export const ASYMMETRIC_PARTS: CuttleKey['type'][] = [
@@ -47,7 +47,7 @@ export function socketSize(key: CuttleKey): Vector {
   if (key.type == 'alps') return new Vector(18.6, 17, 5)
   if (key.type == 'joystick-ps2-40x45') return new Vector(40, 45, 4)
   if (key.type.startsWith('cirque')) return new Vector(0, 0, 3)
-  if (key.type == 'thumbstick') return new Vector(26, 26, 4)
+  if (key.type == 'thumbstick-kailh-GM-4-0') return new Vector(31.6, 31.6, 4) //10.7mm to base of connector legs
   return new Vector(18, 18, 5)
 }
 
@@ -86,8 +86,8 @@ export function partBottom(sw: CuttleKey['type'] | undefined): [number, number, 
   if (sw == 'joystick-ps2-40x45') {
     return [box(40, 45, 19.5)]
   }
-  if (sw == 'thumbstick') {
-    return [box(36, 36, 23)]
+  if (sw == 'thumbstick-kailh-GM-4-0') {
+    return [box(38, 45, 18)]
   }
   return [box(10, 10, 2)]
 }
