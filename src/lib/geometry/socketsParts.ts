@@ -24,6 +24,7 @@ export const PART_NAMES: Record<CuttleKey['type'], string> = {
   'cirque-35mm': 'Cirque 35 mm Flat Circle Trackpads',
   'cirque-40mm': 'Cirque 40 mm Flat Circle Trackpads',
   'joystick-ps2-40x45': 'PS2 style joystick module',
+  'thumbstick-omron-micro-custom': 'Custom Thumbstick from Omron Micro Switches',
 }
 
 export const ASYMMETRIC_PARTS: CuttleKey['type'][] = [
@@ -45,6 +46,7 @@ export function socketSize(key: CuttleKey): Vector {
   if (key.type == 'oled-128x32-0.91in-dfrobot') return new Vector(11.6, 41.18, 2.84)
   if (key.type == 'alps') return new Vector(18.6, 17, 5)
   if (key.type == 'joystick-ps2-40x45') return new Vector(40, 45, 4)
+  if (key.type == 'thumbstick-omron-micro-custom') return new Vector(30, 30, 4)
   if (key.type.startsWith('cirque')) return new Vector(0, 0, 3)
   return new Vector(18, 18, 5)
 }
@@ -83,6 +85,9 @@ export function partBottom(sw: CuttleKey['type'] | undefined): [number, number, 
   }
   if (sw == 'joystick-ps2-40x45') {
     return [box(40, 45, 19.5)]
+  }
+  if (sw == 'thumbstick-omron-micro-custom') {
+    return [box(30, 30, 16.2)]
   }
   return [box(10, 10, 2)]
 }
