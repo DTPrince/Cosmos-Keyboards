@@ -774,7 +774,7 @@ export const connectors: Record<string, { positive: (c: Cuttleform) => Solid | n
       return null
     },
     negative(c: Cuttleform) {
-      return drawCircle(3.2).translate(-14.5, 0) // trrs hole
+      return drawCircle(3.2).translate(-16.5, 0) // trrs hole
         .fuse(rectangleForUSB(c)) // usb hole
         .sketchOnPlane('XZ')
         .extrude(c.wallThickness * 10)
@@ -905,7 +905,7 @@ function addRails(c: Cuttleform, solid: Solid, element: BoardElement): Solid {
   if (element.rails.backstop) {
     solid = solid.fuse(boardBoxBox({
       offset: new Vector(element.offset.x, element.offset.y - element.size.y, BOARD_TOLERANCE_Z),
-      size: new Vector(element.size.x + BOARD_COMPONENT_TOL * 2, STOPPER_WIDTH, element.size.z + element.offset.z + 0.5),
+      size: new Vector(element.size.x + BOARD_COMPONENT_TOL * 2, STOPPER_WIDTH, element.size.z + element.offset.z - 0.5),
     }))
   }
 

@@ -220,7 +220,7 @@ export function boardOffsetInfo(config: Cuttleform): BoardOffset {
         connectors: [
           {
             model: 'trrs',
-            offset: new Vector(-14.5, 0, 2.5),
+            offset: new Vector(-16.5, 0, 2.5),
             size: new Vector(6.1, 12.2, 5),
             boundingBoxZ: 6,
             rails: {
