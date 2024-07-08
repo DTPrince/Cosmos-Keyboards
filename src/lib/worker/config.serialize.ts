@@ -159,6 +159,7 @@ const KEYBOARD_EXTRA_DEFAULTS: KeyboardExtra = {
   wristRestExtension: 80,
   connectorIndex: -10,
   screwIndices: [],
+  microcontrollerAngle: 0,
 }
 
 const TILT_DEFAULTS: TiltShell = {
@@ -399,6 +400,7 @@ export function decodeConfigIdk(b64: string): CosmosKeyboard {
     curvature: decodeCurvature(keeb.curvature || {}),
     ...decodeConnector(keeb.connector),
     ...decodeMicrocontroller(keeb.microcontroller),
+    microcontrollerAngle: keebExtra.microcontrollerAngle / 45,
     shell: decodeShell(keeb.shell),
     wristRestEnable: decodeKeyboardFlags(keeb.keyboardFlags).wrEnable,
     unibody: decodeKeyboardFlags(keeb.keyboardFlags).unibody,
@@ -595,6 +597,12 @@ export function encodeCosmosConfig(conf: CosmosKeyboard): Keyboard {
       wristRestExtension: Math.round(conf.wristRestProps.extension * 10),
       connectorIndex: Math.round(conf.connectorIndex * 10),
       screwIndices: conf.screwIndices.some(c => c >= 0) ? conf.screwIndices.map(i => Math.round(i * 10) + 10) : [],
+      roundedSideConcavity: conf.rounded.side ? Math.round(conf.rounded.side.concavity * 10) : undefined,
+      roundedSideDivisor: conf.rounded.side ? Math.round(conf.rounded.side.divisor * 10) : undefined,
+      roundedTopHorizontal: conf.rounded.top ? Math.round(conf.rounded.top.horizontal * 100) : undefined,
+      roundedTopVertical: conf.rounded.top ? Math.round(conf.rounded.top.vertical * 100) : undefined,
+      webMinThicknessFactor: Math.round(conf.webMinThicknessFactor * 10),
+      microcontrollerAngle: Math.round(conf.microcontrollerAngle * 45),
     },
   }
 }
