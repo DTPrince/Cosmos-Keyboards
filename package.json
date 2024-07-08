@@ -53,7 +53,7 @@
     "ml-matrix": "^6.10.4",
     "openscad-parser": "^0.6.1",
     "simple-git-hooks": "^2.11.1",
-    "svelte": "^4.2.17",
+    "svelte": "^4.2.18",
     "svelte-check": "^3.8.1",
     "ts-morph": "^20.0.0",
     "ts-node": "^10.9.1",
@@ -64,8 +64,8 @@
     "vite": "^5.3.3"
   },
   "optionalDependencies": {
-    "gl": "^6.0.2",
-    "canvas": "^2.11.2"
+    "canvas": "^2.11.2",
+    "gl": "^6.0.2"
   },
   "type": "module",
   "simple-git-hooks": {
