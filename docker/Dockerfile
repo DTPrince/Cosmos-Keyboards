@@ -12,6 +12,7 @@ RUN apt-get install -y python3.11-full python3.11-venv python3-pip \
 
 RUN ln -s /usr/bin/python3.11 /usr/bin/python
 
+RUN npm install --cpu=x64 --os=linux --libc=glibc sharp
 RUN npm install --include=optional
 
 RUN if [ -f ./.env ]; then set -a && . ./.env && set +a; fi && \
