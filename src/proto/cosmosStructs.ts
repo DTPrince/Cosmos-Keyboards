@@ -30,6 +30,7 @@ enumeration('PART', {
   21: 'joystick-ps2-40x45',
   22: 'trackball',
   23: 'trackpad-cirque',
+  24: 'thumbstick-omron-micro-custom',
 
   // Old stuff no one should be using.
   110: 'old-mx',
