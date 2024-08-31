@@ -172,9 +172,9 @@ export async function generate(config: Cuttleform, geo: Geometry, stitchWalls: b
   console.timeEnd('Creating holes')
   console.time('Creating connector')
   // let connector = null
-  if (config.connector && connOrigin) {
+  if (connOrigin) {
     // connector = makeConnector(config, config.connector, connOrigin)
-    walls = cutWithConnector(config, walls, config.connector, connOrigin)
+    walls = cutWithConnector(config, walls, connOrigin)
   }
   console.timeEnd('Creating connector')
   console.time('Creating screw inserts')
@@ -246,10 +246,11 @@ export async function generateBoardHolder(config: Cuttleform) {
   return result
 }
 
-export async function generateWristRest(config: Cuttleform) {
+export async function generateWristRest(config: Cuttleform, flip = false) {
   await ensureOC()
-  if (!config.wristRest) return NULL
-  const rest = wristRest(config, newGeometry(config)) as Solid
+  const name = flip ? 'wristRestLeft' : 'wristRestRight'
+  if (!config[name]) return NULL
+  const rest = wristRest(config, newGeometry(config), name) as Solid
   const result = meshWithVolume(rest)
   rest.delete()
   return result
@@ -257,9 +258,9 @@ export async function generateWristRest(config: Cuttleform) {
 
 export async function generateMirroredWristRest(config: Cuttleform) {
   await ensureOC()
-  if (!config.wristRest) return NULL
+  if (!config.wristRestLeft) return NULL
   config.keys.forEach(k => k.position = new ETrsf(k.position.history).mirror([1, 0, 0]))
-  const rest = wristRest(config, newGeometry(config)).mirror('YZ', [0, 0, 0])
+  const rest = wristRest(config, newGeometry(config), 'wristRestLeft').mirror('YZ', [0, 0, 0])
   const result = meshWithVolume(rest)
   rest.delete()
   return result
@@ -269,8 +270,8 @@ export async function cutWall(config: Cuttleform) {
   await ensureOC()
   const geo = newGeometry(config)
   let walls = makeWalls(config, geo.allWallCriticalPoints(), geo.worldZ, geo.bottomZ).toSolid(false, false)
-  if (config.connector && geo.connectorOrigin) {
-    walls = cutWithConnector(config, walls, config.connector, geo.connectorOrigin)
+  if (geo.connectorOrigin) {
+    walls = cutWithConnector(config, walls, geo.connectorOrigin)
   }
   const result = meshWithVolumeAndSupport(walls, geo.bottomZ)
   // walls.delete()
@@ -290,14 +291,14 @@ async function getModel(conf: Cuttleform, name: string, stitchWalls: boolean, fl
     assembly = assembly.transform(new Trsf().translate(0, 0, -geo.floorZ))
     return assembly
   } else if (name == 'plate' || name == 'platetop') {
-    return makePlate(conf, geometry, true, true).top()
+    return makePlate(conf, geometry, true, true).top().translateZ(-geometry.floorZ)
   } else if (name == 'platebottom') {
     const bot = makePlate(conf, geometry, true, true).bottom
-    return bot ? bot() : undefined
+    return bot ? bot().translateZ(-geometry.floorZ) : undefined
   } else if (name == 'holder') {
-    return boardHolder(conf, geometry)
+    return boardHolder(conf, geometry).translateZ(-geometry.floorZ)
   } else if (name == 'wristrest') {
-    return wristRest(conf, geometry)
+    return wristRest(conf, geometry, flip ? 'wristRestLeft' : 'wristRestRight').translateZ(-geometry.floorZ)
   } else {
     throw new Error("I don't know what model you want")
   }
@@ -306,9 +307,9 @@ async function getModel(conf: Cuttleform, name: string, stitchWalls: boolean, fl
 export async function getSTL(conf: Cuttleform, name: string, side: 'left' | 'right' | 'unibody') {
   const flip = side == 'left'
   let model = await getModel(conf, name, true, flip)
-  if (name == 'wristrest' && side == 'unibody' && conf.wristRest && model) {
+  if (name == 'wristrest' && side == 'unibody' && conf.wristRestRight && model) {
     conf.keys.forEach(k => k.position = new ETrsf(k.position.history).mirror([1, 0, 0]))
-    model = (model as Solid).fuse(wristRest(conf, newGeometry(conf)).mirror('YZ', [0, 0, 0]))
+    model = (model as Solid).fuse(wristRest(conf, newGeometry(conf), 'wristRestLeft').mirror('YZ', [0, 0, 0]))
   }
   if (!model) throw new Error(`Model ${name} is empty`)
   if (flip) model = model.mirror('YZ', [0, 0, 0])
@@ -324,8 +325,8 @@ export async function getSTEP(conf: Cuttleform, flip: boolean, stitchWalls: bool
     assembly.add('Microcontroller Holder', boardHolder(conf, geometry))
   }
 
-  if (conf.wristRest && (await getUser()).sponsor) {
-    assembly.add('Wrist Rest', wristRest(conf, geometry))
+  if (conf.wristRestRight && (await getUser()).sponsor) {
+    assembly.add('Wrist Rest', wristRest(conf, geometry, flip ? 'wristRestLeft' : 'wristRestRight'))
   }
 
   assembly = assembly.transform(new Trsf().translate(0, 0, -geometry.floorZ))

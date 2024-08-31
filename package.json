@@ -23,15 +23,15 @@
     "monaco-editor": "^0.37.1",
     "pako": "^2.1.0",
     "qrious": "^4.0.2",
-    "replicad": "^0.15.1",
+    "replicad": "^0.17.0",
     "simplicial-complex-boundary": "^1.0.1",
     "svd-js": "^1.1.1",
     "svelte-easy-popover": "^1.0.0",
     "three": "^0.164.1"
   },
   "devDependencies": {
-    "@gltf-transform/core": "^3.9.0",
-    "@gltf-transform/functions": "^3.9.0",
+    "@gltf-transform/core": "^4.0.4",
+    "@gltf-transform/functions": "^4.0.4",
     "@protobuf-ts/plugin": "^2.8.2",
     "@sveltejs/adapter-auto": "^3.2.2",
     "@sveltejs/adapter-static": "^3.0.2",

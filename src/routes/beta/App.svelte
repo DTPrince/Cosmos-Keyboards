@@ -52,6 +52,7 @@
     view,
     noBlanks,
     noLabels,
+    showGrid,
   } from '$lib/store'
   import { onDestroy } from 'svelte'
   import { browser } from '$app/environment'
@@ -64,6 +65,7 @@
   import { notNull, objEntriesNotNull, objKeys } from '$lib/worker/util'
   import { T } from '@threlte/core'
   import Checkbox from '$lib/presentation/Checkbox.svelte'
+  import type { unibody } from '$lib/worker/modeling/transformation-ext'
 
   const DEF_CENTER = [-35.510501861572266, -17.58449935913086, 35.66889877319336] as [
     number,
@@ -215,6 +217,14 @@
 
   let meshes: FullKeyboardMeshes = {}
 
+  function cloneConfig(c: FullCuttleform) {
+    return {
+      left: c.left ? { ...c.left, shell: { ...c.left.shell } } : undefined,
+      right: c.right ? { ...c.right, shell: { ...c.right.shell } } : undefined,
+      unibody: c.unibody ? { ...c.unibody, shell: { ...c.unibody.shell } } : undefined,
+    }
+  }
+
   function areDifferent(c1: any, c2: any) {
     if (c1 == undefined && c2 == undefined) return []
     if (c1 == undefined && c2 != undefined) return ['everything']
@@ -246,7 +256,8 @@
     cutPromise: pool.execute((w) => w.cutWall(conf), 'Cut wall'),
     holderPromise: pool.execute((w) => w.generateBoardHolder(conf), 'Holder'),
     screwPromise: pool.execute((w) => w.generateScrewInserts(conf), 'Inserts'),
-    wristRestPromise: hasPro && pool.execute((w) => w.generateWristRest(conf), 'Wrist Rest'),
+    wristRestPromise:
+      hasPro && pool.execute((w) => w.generateWristRest(conf, side == 'left'), 'Wrist Rest'),
     secondWristRestPromise:
       hasPro &&
       side == 'unibody' &&
@@ -272,12 +283,11 @@
       const differences = areDifferent2(oldConfig, conf)
       console.log('differences', differences)
       if (differences.length == 0) return
-      oldConfig = conf
-      oldTempConfig = conf
+      oldConfig = cloneConfig(conf)
+      oldTempConfig = cloneConfig(conf)
 
       if (
-        differences.length == 1 &&
-        (differences[0] == 'wristRest' || differences[0] == 'wristRestOrigin')
+        differences.every((d) => d == 'wristRestLeft' || d == 'wristRestRight' || d == 'wristRestOrigin')
       ) {
         const renderNumber = ++lastRenderNumber
         console.log('PROCESSING WRIST REST', renderNumber)
@@ -298,7 +308,9 @@
           } else {
             pool.reset(kbdNames.length)
             const wristMeshes = await Promise.all(
-              kbdNames.map((k) => pool.execute((w) => w.generateWristRest(conf[k]!), 'Wrist Rest'))
+              kbdNames.map((k) =>
+                pool.execute((w) => w.generateWristRest(conf[k]!, k == 'left'), 'Wrist Rest')
+              )
             )
             if (renderNumber >= lastRenderNumber) {
               wristMeshes.forEach((wristMesh, i) => {
@@ -315,14 +327,14 @@
         return
       }
     } else if (full) {
-      oldConfig = conf
-      oldTempConfig = conf
+      oldConfig = cloneConfig(conf)
+      oldTempConfig = cloneConfig(conf)
     } else {
       if (oldTempConfig) {
         const differences = areDifferent2(oldTempConfig, conf)
         if (differences.length == 0) return
       }
-      oldTempConfig = conf
+      oldTempConfig = cloneConfig(conf)
     }
 
     let originalErr: ConfError | undefined
@@ -637,6 +649,9 @@
                 class:selected={$view == 'right'}><Icon name="kb-right" /></button
               >
             </div>
+            <label class="flex items-center mt-2 mb-4">
+              <Checkbox small purple basic bind:value={$showGrid} /> Show Grid
+            </label>
             <label class="flex items-center my-2">
               <Checkbox small purple basic bind:value={$noWall} /> Hide Wall
             </label>
@@ -1114,7 +1129,7 @@
   <Dialog big on:close={() => (kleView = false)}>
     <span slot="title">KLE Export</span>
     <div slot="content">
-      <KleView conf={config?.right ?? config?.unibody} />
+      <KleView conf={config} />
     </div>
   </Dialog>
 {/if}

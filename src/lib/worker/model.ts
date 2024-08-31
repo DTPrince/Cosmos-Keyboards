@@ -1,12 +1,13 @@
 import type { TopoDS_Shell } from '$assets/replicad_single'
-import { BOARD_PROPERTIES, type BoardElement, boardElements, holderOuterRadius, holderThickness, STOPPER_WIDTH } from '$lib/geometry/microcontrollers'
+import { BOARD_PROPERTIES, type BoardElement, boardElements, convertToCustomConnectors, holderOuterRadius, holderThickness, STOPPER_WIDTH } from '$lib/geometry/microcontrollers'
 import { SCREWS } from '$lib/geometry/screws'
 import { wallBezier } from '@pro/rounded'
 import { makeStiltsPlate, makeStiltsPlateSimpleMesh, splitStiltsScrewInserts } from '@pro/stiltsModel'
 import { cast, CornerFinder, downcast, draw, drawCircle, Drawing, drawRoundedRectangle, Face, loft, type Point, type Sketch, Sketcher, Solid } from 'replicad'
 import type { TiltGeometry } from './cachedGeometry'
 import { createTriangleMap } from './concaveman'
-import type { Cuttleform, Geometry } from './config'
+import { convertToMaybeCustomConnectors, type Cuttleform, type Geometry } from './config'
+import type { ConnectorMaybeCustom, CustomConnector } from './config.cosmos'
 import {
   bezierPatch,
   type CriticalPoints,
@@ -830,11 +831,23 @@ export const connectors: Record<string, { positive: (c: Cuttleform) => Solid | n
   },
 }
 
-export function cutWithConnector(c: Cuttleform, wall: Solid, conn: keyof typeof connectors, origin: Trsf) {
-  if (!conn) return wall
-  const pos = connectors[conn].positive(c)
-  if (pos) return wall.cut(origin.transform(pos))
-  return wall.cut(origin.transform(connectors[conn].negative(c)))
+export function cutWithConnector(c: Cuttleform, wall: Solid, origin: Trsf) {
+  // if (!conn) return wall
+  // const pos = connectors[conn].positive(c)
+  // if (pos) return wall.cut(origin.transform(pos))
+  // return wall.cut(origin.transform(connectors[conn].negative(c)))
+  const connectors = convertToMaybeCustomConnectors(c).map(conn => convertToCustomConnectors(c, conn))
+  if (connectors.length == 0) return wall
+
+  const connectorSketches = connectors.map(k =>
+    (k.width == k.radius * 2 && k.height == k.radius * 2 ? drawCircle(k.radius) : drawRoundedRectangle(k.width, k.height, k.radius))
+      .translate(k.x, k.y)
+  )
+  const fusedSketch = connectorSketches.reduce((a, b) => a.fuse(b))
+  return wall.cut(origin.transform(
+    fusedSketch.sketchOnPlane('XZ').extrude(c.wallThickness * 10)
+      .translate(0, c.wallThickness * 10, 0) as Solid,
+  ))
 }
 
 export function makeConnector(c: Cuttleform, conn: keyof typeof connectors, origin: Point) {
@@ -929,10 +942,10 @@ function addRails(c: Cuttleform, solid: Solid, element: BoardElement): Solid {
   }))
 
   // Add backstop
-  if (element.rails.backstop) {
+  if (typeof element.rails.backstopHeight !== 'undefined') {
     solid = solid.fuse(boardBoxBox({
       offset: new Vector(element.offset.x, element.offset.y - element.size.y, BOARD_TOLERANCE_Z),
-      size: new Vector(element.size.x + BOARD_COMPONENT_TOL * 2, STOPPER_WIDTH, element.size.z + element.offset.z + 0.5),
+      size: new Vector(element.size.x + BOARD_COMPONENT_TOL * 2, STOPPER_WIDTH, element.size.z + element.offset.z + element.rails.backstopHeight),
     }))
   }
 

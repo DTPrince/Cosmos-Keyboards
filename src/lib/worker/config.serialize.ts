@@ -4,10 +4,12 @@
 
 import ETrsf from '$lib/worker/modeling/transformation-ext'
 // import { deserialize } from 'src/routes/beta/lib/serialize'
+import { BinaryReader, BinaryWriter } from '@protobuf-ts/runtime'
 import {
   decodeBasicShellFlags,
   decodeClusterFlags,
   decodeConnector,
+  decodeConnectorPreset,
   decodeKeyboardFlags,
   decodeKeycap,
   decodeMicrocontroller,
@@ -18,7 +20,7 @@ import {
   decodeTiltShellFlags,
   encodeBasicShellFlags,
   encodeClusterFlags,
-  encodeConnector,
+  encodeConnectorPreset,
   encodeKeyboardFlags,
   encodeKeycap,
   encodeMicrocontroller,
@@ -29,8 +31,20 @@ import {
   encodeTiltShellFlags,
 } from '../../../target/cosmosStructs'
 import { Cluster, Curvature, Key, Keyboard, KeyboardExtra, TiltShell } from '../../../target/proto/cosmos'
-import { type Cuttleform, type CuttleKey, type CuttleKeycapKey, decodeTuple, encodeTuple, type Keycap, tupleToRot, tupletoRotOnly, tupleToXYZ, tupleToXYZA } from './config'
-import { type CosmosCluster, type CosmosKey, type CosmosKeyboard, type PartType, type Profile, toCosmosConfig } from './config.cosmos'
+import {
+  convertToMaybeCustomConnectors,
+  type Cuttleform,
+  type CuttleKey,
+  type CuttleKeycapKey,
+  decodeTuple,
+  encodeTuple,
+  type Keycap,
+  tupleToRot,
+  tupletoRotOnly,
+  tupleToXYZ,
+  tupleToXYZA,
+} from './config'
+import { type ConnectorMaybeCustom, type CosmosCluster, type CosmosKey, type CosmosKeyboard, type CustomConnector, type PartType, type Profile, toCosmosConfig } from './config.cosmos'
 import { DEFAULT_MWT_FACTOR } from './geometry.thickWebs'
 import { objKeys } from './util'
 
@@ -57,6 +71,68 @@ export function decodePartType(type: number): PartType {
     aspect: ((aspect & 0x80) ? -(aspect & 0x7F) / 32 : aspect / 32) || undefined,
     variant: variant == 0 ? undefined : variant - 1,
   }
+}
+
+export function encodeConnectors(connectors: ConnectorMaybeCustom[]) {
+  const writer = new BinaryWriter()
+  for (const conn of connectors) {
+    if (typeof conn.preset == 'undefined') {
+      writer.uint32(encodeConnectorPreset('custom'))
+      writer.sint32(Math.round(conn.x * 10))
+      writer.sint32(Math.round(conn.y * 10))
+      writer.uint32(Math.round(conn.width * 10))
+      writer.uint32(Math.round(conn.height * 10))
+      writer.uint32(Math.round(conn.radius * 10))
+    } else {
+      let preset = 0
+      if (conn.preset == 'usb') {
+        if (conn.size == 'slim') preset = encodeConnectorPreset('usb-slim')
+        if (conn.size == 'average') preset = encodeConnectorPreset('usb-average')
+        if (conn.size == 'big') preset = encodeConnectorPreset('usb-big')
+      } else preset = encodeConnectorPreset(conn.preset)
+      if (typeof conn.x != 'undefined') {
+        writer.uint32(preset | 0x80)
+        writer.sint32(Math.round(conn.x * 10))
+      } else {
+        writer.uint32(preset)
+      }
+    }
+  }
+  return writer.finish()
+}
+
+export function decodeConnectors(arr: Uint8Array) {
+  const reader = new BinaryReader(arr)
+  const connectors: ConnectorMaybeCustom[] = []
+  while (reader.pos < reader.len) {
+    const presetEncoded = reader.uint32()
+    const presetDecoded = decodeConnectorPreset(presetEncoded & 0x7F)
+    if (presetDecoded == 'custom') {
+      connectors.push({
+        x: reader.sint32() / 10,
+        y: reader.sint32() / 10,
+        width: reader.uint32() / 10,
+        height: reader.uint32() / 10,
+        radius: reader.uint32() / 10,
+      })
+    } else {
+      let connector: ConnectorMaybeCustom
+      if (presetDecoded == 'usb-slim') connector = { preset: 'usb', size: 'slim' }
+      else if (presetDecoded == 'usb-average') connector = { preset: 'usb', size: 'average' }
+      else if (presetDecoded == 'usb-big') connector = { preset: 'usb', size: 'big' }
+      else connector = { preset: presetDecoded }
+      if (presetEncoded & 0x80) connector.x = reader.sint32() / 10
+      connectors.push(connector)
+    }
+  }
+  return connectors
+}
+
+function decodeConnectorsCompatible(connectors: Uint8Array, connector: number | undefined) {
+  if (typeof connector !== 'undefined') {
+    return convertToMaybeCustomConnectors(decodeConnector(connector) as any)
+  }
+  return decodeConnectors(connectors)
 }
 
 // ----------  PROFILES ----------
@@ -86,7 +162,8 @@ const INFERRED_HOMING = {
 
 export function encodeProfile(p: Partial<Profile>) {
   let row = p.row ?? 1
-  if (typeof row !== 'undefined' && (row < 1 || row > 8)) throw new Error('Row out of bounds')
+  if (typeof row !== 'undefined' && (row < 0 || row > 8)) throw new Error('Row out of bounds')
+  if (row == 0) row = 8 // I messed up and made R1 encode to 0. So now R0 encodes to 7.
   let letter = 0
   let inferredHome: typeof INFERRED_HOMING[number] | undefined = undefined
   if (p.letter && p.letter.length) {
@@ -104,7 +181,8 @@ export function encodeProfile(p: Partial<Profile>) {
 }
 
 export function decodeProfile(flags: number, overrideLetter?: string): Profile {
-  const { profile, row, letter: letterId, home } = decodeKeycap(flags)
+  let { profile, row, letter: letterId, home } = decodeKeycap(flags)
+  if (row == 7) row = -1 // I messed up and made R1 encode to 0. So now R0 encodes to 7.
 
   let letter = letterId > 0 ? String.fromCharCode(letterId >> 1) : undefined
   let inferredHoming = undefined
@@ -129,7 +207,7 @@ export const KEYBOARD_DEFAULTS: Keyboard = {
   wallShrouding: 0,
   wallThickness: 40,
   keyBasis: encodeProfile({ profile: 'xda' }),
-  connector: encodeConnector({ connector: 'trrs', connectorSizeUSB: 'average' }),
+  connectors: encodeConnectors([{ preset: 'trrs' }, { preset: 'usb', size: 'average' }]),
   nScrews: 7,
   screwFlags: encodeScrewFlags({ screwSize: 'M3', screwType: 'screw insert', screwCountersink: true, clearScrews: true }),
   microcontroller: encodeMicrocontroller({ microcontroller: 'kb2040-adafruit', fastenMicrocontroller: true }),
@@ -153,11 +231,14 @@ const KEYBOARD_EXTRA_DEFAULTS: KeyboardExtra = {
   roundedTopVertical: 67,
   wristRestAngle: 0,
   wristRestTaper: 450,
-  wristRestMaxWidth: 1000,
+  wristRestLeftMaxWidth: 1000,
+  wristRestRightMaxWidth: 1000,
   wristRestTenting: 270,
   wristRestSlope: 225,
-  wristRestExtension: 80,
-  connectorIndex: -10,
+  wristRestLeftExtension: 80,
+  wristRestRightExtension: 80,
+  connectorLeftIndex: -10,
+  connectorRightIndex: -10,
   screwIndices: [],
   microcontrollerAngle: 0,
 }
@@ -190,7 +271,7 @@ export function decodeShell(shell: Keyboard['shell']): Cuttleform['shell'] {
       tilt: opts.tiltVector ? tupletoRotOnly(opts.tiltVector) : opts.tilt / 45,
     }
   }
-  throw new Error('Shell type not supported')
+  throw new Error(`Decoding shell type ${shell.oneofKind} not supported`)
 }
 
 export function encodeShell(shell: Cuttleform['shell']): Keyboard['shell'] {
@@ -223,8 +304,9 @@ export function encodeShell(shell: Cuttleform['shell']): Keyboard['shell'] {
     for (const key of objKeys(opts.tiltShell)) {
       if (opts.tiltShell[key] == TILT_DEFAULTS[key]) delete opts.tiltShell[key]
     }
+    return opts
   }
-  throw new Error('Shell type not supported')
+  throw new Error(`Encoding shell type ${shell.type} not supported`)
 }
 
 interface FullKeyboard extends Required<Keyboard> {
@@ -398,7 +480,7 @@ export function decodeConfigIdk(b64: string): CosmosKeyboard {
       side: roundedFlags.side ? { divisor: keebExtra.roundedSideDivisor / 10, concavity: keebExtra.roundedSideConcavity / 10 } : undefined,
     },
     curvature: decodeCurvature(keeb.curvature || {}),
-    ...decodeConnector(keeb.connector),
+    connectors: decodeConnectorsCompatible(keeb.connectors, keeb.connector),
     ...decodeMicrocontroller(keeb.microcontroller),
     microcontrollerAngle: keebExtra.microcontrollerAngle / 45,
     shell: decodeShell(keeb.shell),
@@ -407,13 +489,16 @@ export function decodeConfigIdk(b64: string): CosmosKeyboard {
     wristRestProps: {
       angle: keebExtra.wristRestAngle / 45,
       taper: keebExtra.wristRestTaper / 45,
-      maxWidth: keebExtra.wristRestMaxWidth / 10,
+      maxWidthLeft: keebExtra.wristRestLeftMaxWidth / 10,
+      maxWidthRight: keebExtra.wristRestRightMaxWidth / 10,
       tenting: keebExtra.wristRestTenting / 45,
       slope: keebExtra.wristRestSlope / 45,
-      extension: keebExtra.wristRestExtension / 10,
+      extensionLeft: keebExtra.wristRestLeftExtension / 10,
+      extensionRight: keebExtra.wristRestRightExtension / 10,
     },
     wristRestPosition: keeb.wristRestPosition,
-    connectorIndex: keebExtra.connectorIndex / 10,
+    connectorLeftIndex: keebExtra.connectorLeftIndex / 10,
+    connectorRightIndex: keebExtra.connectorRightIndex / 10,
     clusters: keeb.cluster.map(decodeCosmosCluster),
   }
   return conf
@@ -578,7 +663,7 @@ export function encodeCosmosConfig(conf: CosmosKeyboard): Keyboard {
     wallShrouding: Math.round(conf.wallShrouding * 10),
     wallThickness: Math.round(conf.wallThickness * 10),
     keyBasis: encodeProfile({ profile: (conf.keyBasis || null), row: 1 }),
-    connector: encodeConnector(conf),
+    connectors: encodeConnectors(conf.connectors),
     nScrews: conf.screwIndices.length,
     screwFlags: encodeScrewFlags(conf),
     microcontroller: encodeMicrocontroller(conf),
@@ -592,10 +677,13 @@ export function encodeCosmosConfig(conf: CosmosKeyboard): Keyboard {
       wristRestAngle: Math.round(conf.wristRestProps.angle * 45),
       wristRestTaper: Math.round(conf.wristRestProps.taper * 45),
       wristRestTenting: Math.round(conf.wristRestProps.tenting * 45),
-      wristRestMaxWidth: Math.round(conf.wristRestProps.maxWidth * 10),
+      wristRestLeftMaxWidth: Math.round(conf.wristRestProps.maxWidthLeft * 10),
+      wristRestRightMaxWidth: Math.round(conf.wristRestProps.maxWidthRight * 10),
       wristRestSlope: Math.round(conf.wristRestProps.slope * 45),
-      wristRestExtension: Math.round(conf.wristRestProps.extension * 10),
-      connectorIndex: Math.round(conf.connectorIndex * 10),
+      wristRestLeftExtension: Math.round(conf.wristRestProps.extensionLeft * 10),
+      wristRestRightExtension: Math.round(conf.wristRestProps.extensionRight * 10),
+      connectorLeftIndex: Math.round(conf.connectorLeftIndex * 10),
+      connectorRightIndex: Math.round(conf.connectorRightIndex * 10),
       screwIndices: conf.screwIndices.some(c => c >= 0) ? conf.screwIndices.map(i => Math.round(i * 10) + 10) : [],
       roundedSideConcavity: conf.rounded.side ? Math.round(conf.rounded.side.concavity * 10) : undefined,
       roundedSideDivisor: conf.rounded.side ? Math.round(conf.rounded.side.divisor * 10) : undefined,
@@ -615,8 +703,9 @@ export function serializeCosmosConfig(trimmed: Keyboard) {
   if (trimmedExtra) {
     for (const key of Object.keys(trimmedExtra) as (keyof KeyboardExtra)[]) {
       if (trimmedExtra[key] == KEYBOARD_EXTRA_DEFAULTS[key]) delete trimmedExtra[key]
+      if (typeof trimmedExtra[key] == 'undefined') delete trimmedExtra[key]
     }
-    const usedTrimmedKeys = Object.values(trimmedExtra).filter(t => !Array.isArray(t) || t.length > 0)
+    const usedTrimmedKeys = Object.entries(trimmedExtra).filter(([k, v]) => !Array.isArray(v) || v.length > 0)
     if (usedTrimmedKeys.length == 0) delete trimmed.extra
   }
   if (trimmed.curvature && Object.keys(trimmed.curvature!).length == 0) delete trimmed.curvature
