@@ -1,4 +1,4 @@
-import type { CuttleBlankKey, TrackballVariant, TrackpadCirqueVariant } from 'target/cosmosStructs'
+import type { CuttleBlankKey, TrackballVariant, TrackpadCirqueVariant } from '$target/cosmosStructs'
 import type { CuttleKey } from '../worker/config'
 
 const MX_BOTTOM = box(14, 14, 8.5)
@@ -39,15 +39,16 @@ export const PART_INFO: Record<CuttleKey['type'], PartInfo> = {
     partBottom: [box(16.9, 16.8, 8)],
     keycap: true,
   },
-  // 'mx-pcb-twist': {
-  //   partName: 'MX-Compatible PCB (Amoeba Twist)',
-  //   bomName: 'MX-Compatible Switches',
-  //   category: 'Sockets',
-  //   stepFile: '/src/assets/key-mx-pcb-twist.step',
-  //   partOverride: MX_PART,
-  //   socketSize: [18.7, 18.7, 9.52],
-  //   partBottom: [MX_BOTTOM, box(19.4, 19.4, 6.6)],
-  // },
+  'mx-pcb-twist': {
+    partName: 'MX-Compatible PCB (EXPERIMENTAL TWISTY)',
+    bomName: 'MX-Compatible Switches',
+    category: 'Sockets',
+    stepFile: '/src/assets/key-mx-pcb-twist.step',
+    partOverride: MX_PART,
+    socketSize: [18.7, 18.7, 8],
+    partBottom: [MX_BOTTOM, box(19.4, 19.4, 6.6)],
+    keycap: true,
+  },
   'alps': {
     partName: 'Alps (and clones)',
     bomName: 'Alps Switches',
@@ -179,7 +180,7 @@ export const PART_INFO: Record<CuttleKey['type'], PartInfo> = {
     bomName: () => 'Trackballs',
     category: 'Trackballs & Trackpads',
     stepFile: '/target/key-trackball.step',
-    partOverride: null, // Trackball model is a custom one
+    partOverride: '/target/switch-trackball.glb',
     socketSize: (v: Variant) => ({
       radius: { '25mm': 16.4, '34mm': 20.9 }[v.size as TrackballVariant['size']],
       height: 4,
@@ -187,12 +188,12 @@ export const PART_INFO: Record<CuttleKey['type'], PartInfo> = {
     }),
     partBottom: (v: Variant) => {
       // box = pcb then chip
-      if (v.size == '25mm') return [box(28.5, 21.3, 22.5), box(16, 11, 25)]
-      return [box(28.5, 21.3, 27), box(16, 11, 29.5)] // 34mm variant
+      if (v.size == '25mm') return [box(28.5, 21.3, 23.8), box(16, 11, 26.3)]
+      return [box(28.5, 21.3, 28.3), box(16, 11, 30.8)] // 34mm variant
     },
     variants: {
       size: ['25mm', '34mm'],
-      bearings: ['Roller', 'Ball'],
+      bearings: ['Roller', 'Ball', 'BTU (7.5mm)', 'BTU (9mm)'],
       sensor: ['Joe'],
     },
   },
@@ -241,6 +242,18 @@ export const PART_INFO: Record<CuttleKey['type'], PartInfo> = {
   },
 }
 
+const CATEGORY_SORT = [
+  'Sockets',
+  'Encoders',
+  'Displays',
+  'Trackballs & Trackpads',
+  'Joysticks',
+  'Backwards-Compatible',
+]
+
+export const sortedCategories = [...new Set(Object.values(PART_INFO).map((p) => p.category))]
+  .sort((a, b) => CATEGORY_SORT.indexOf(a) - CATEGORY_SORT.indexOf(b))
+
 // ------------------------------------------------------------------------------------------------------
 // TYPES
 
@@ -277,7 +290,10 @@ export function variantURL(key: CuttleKey) {
   const info = PART_INFO[key.type]
   const keyVariant = key.variant as Variant
   if (!keyVariant || !('variants' in info)) return ''
-  return '-' + Object.keys(info.variants).map(v => keyVariant[v]).join('-').toLowerCase()
+  return '-' + Object.keys(info.variants).map(v =>
+    keyVariant[v]
+      .replace(/[\(\)]/g, '').replace(/[^\w.]/g, '-')
+  ).join('-').toLowerCase()
 }
 
 export function socketSize(k: CuttleKey): PartSize {

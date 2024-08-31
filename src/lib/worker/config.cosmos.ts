@@ -2,9 +2,9 @@ import ETrsf, { Constant, fullMirrorETrsf, type MatrixOptions, mirror } from '$l
 // import { deserialize } from 'src/routes/beta/lib/serialize'
 import { flippedKey } from '$lib/geometry/keycaps'
 import { PART_INFO, socketSize } from '$lib/geometry/socketsParts'
+import { type ClusterName, type ClusterSide, type ClusterType, type Connector, decodeClusterFlags, encodeClusterFlags, type ScrewFlags } from '$target/cosmosStructs'
+import type { Curvature } from '$target/proto/cosmos'
 import { Matrix4, Vector3 } from 'three'
-import { type ClusterName, type ClusterSide, type ClusterType, type Connector, decodeClusterFlags, encodeClusterFlags, type ScrewFlags } from '../../../target/cosmosStructs'
-import type { Curvature } from '../../../target/proto/cosmos'
 import {
   type AnyShell,
   curvature,
@@ -22,6 +22,23 @@ import {
 import { decodePartType, encodePartType, KEYBOARD_DEFAULTS } from './config.serialize'
 import Trsf from './modeling/transformation'
 import { capitalize, DefaultMap, objEntries, objKeys, sum, TallyMap, trimUndefined } from './util'
+
+export type CustomConnector = {
+  preset?: undefined
+  width: number
+  height: number
+  x: number
+  y: number
+  radius: number
+}
+export type ConnectorMaybeCustom = {
+  preset: 'usb'
+  size: 'slim' | 'average' | 'big'
+  x?: number
+} | {
+  preset: 'trrs'
+  x?: number
+} | CustomConnector
 
 export interface PartType {
   type?: CuttleKey['type']
@@ -61,6 +78,20 @@ export type CosmosKey = {
   sizeA?: number
   sizeB?: number
 }
+
+interface CosmosWristRestProps {
+  angle: number
+  taper: number
+  tenting: number
+  slope: number
+  stilts?: boolean
+
+  maxWidthLeft: number
+  maxWidthRight: number
+  extensionLeft: number
+  extensionRight: number
+}
+
 export type CosmosKeyboard =
   & {
     curvature: Required<CosmosCurvature>
@@ -80,12 +111,13 @@ export type CosmosKeyboard =
     shell: AnyShell
     wristRestEnable: boolean
     unibody: boolean
-    wristRestProps: Exclude<Cuttleform['wristRest'], undefined>
+    wristRestProps: CosmosWristRestProps
     wristRestPosition: bigint
-    connectorIndex: number
+    connectorLeftIndex: number
+    connectorRightIndex: number
+    connectors: ConnectorMaybeCustom[]
   }
   & ScrewFlags
-  & Connector
 
 export const ROUND_PARTS = objKeys(PART_INFO).filter(p => 'radius' in socketSize({ type: p, variant: {} } as any))
 export const PARTS_WITH_KEYCAPS = objKeys(PART_INFO).filter(p => PART_INFO[p].keycap)
@@ -250,7 +282,12 @@ export function toFullCosmosConfig(conf: FullCuttleform, flipLeft = false): Cosm
   let kbd: CosmosKeyboard | undefined = undefined
   for (const [side, config] of objEntries(conf)) {
     if (!kbd) kbd = toCosmosConfig(config!, side, false, flipLeft)
-    else kbd.clusters.push(...toCosmosConfig(config!, side, false, flipLeft).clusters)
+    else {
+      const c = toCosmosConfig(config!, side, false, flipLeft)
+      kbd.clusters.push(...c.clusters)
+      if (side == 'left') kbd.connectorLeftIndex = c.connectorLeftIndex
+      if (side == 'right') kbd.connectorRightIndex = c.connectorRightIndex
+    }
   }
   if (!kbd) throw new Error('No configuration for keyboard')
 
@@ -286,30 +323,43 @@ export function toCosmosConfig(conf: Cuttleform, side: 'left' | 'right' | 'unibo
     wallThickness: conf.wallThickness,
     webMinThicknessFactor: conf.webMinThicknessFactor,
     keyBasis: conf.keyBasis,
-    connector: conf.connector,
-    connectorSizeUSB: conf.connectorSizeUSB,
+    connectors: conf.connectors,
     screwIndices: conf.screwIndices,
     screwSize: conf.screwSize,
     screwType: conf.screwType,
     screwCountersink: conf.screwCountersink,
     clearScrews: conf.clearScrews,
     microcontroller: conf.microcontroller,
-    microcontrollerAngle: conf.microcontrollerAngle,
+    microcontrollerAngle: conf.microcontrollerAngle || 0,
     fastenMicrocontroller: conf.fastenMicrocontroller,
     verticalClearance: conf.verticalClearance,
     rounded: conf.rounded,
     shell: conf.shell,
-    wristRestEnable: !!conf.wristRest,
-    connectorIndex: conf.connectorIndex,
+    wristRestEnable: !!conf.wristRestRight,
+    connectorLeftIndex: conf.connectorIndex,
+    connectorRightIndex: conf.connectorIndex,
     unibody: side == 'unibody',
-    wristRestProps: conf.wristRest || {
-      angle: 0,
-      taper: 10,
-      slope: 5,
-      maxWidth: 100,
-      tenting: 6,
-      extension: 8,
-    },
+    wristRestProps: conf.wristRestRight
+      ? {
+        angle: conf.wristRestRight.angle,
+        taper: conf.wristRestRight.taper,
+        slope: conf.wristRestRight.slope,
+        maxWidthRight: conf.wristRestRight.maxWidth,
+        maxWidthLeft: conf.wristRestLeft?.maxWidth ?? 100,
+        tenting: conf.wristRestRight.tenting,
+        extensionRight: conf.wristRestRight.extension,
+        extensionLeft: conf.wristRestLeft?.extension ?? 6,
+      }
+      : {
+        angle: 0,
+        taper: 10,
+        slope: 5,
+        maxWidthLeft: 100,
+        maxWidthRight: 100,
+        tenting: 6,
+        extensionLeft: 8,
+        extensionRight: 8,
+      },
     wristRestPosition: overrideWristRest ? KEYBOARD_DEFAULTS.wristRestPosition! : encodeTuple(wrOrigin.xyz().map(t => Math.round(t * 10))),
     clusters: side == 'unibody'
       ? [
@@ -387,13 +437,33 @@ export function sideFromCosmosConfig(c: CosmosKeyboard, side: 'left' | 'right' |
     screwType: c.screwType,
     clearScrews: c.clearScrews,
     rounded: JSON.parse(JSON.stringify(c.rounded)),
-    connector: c.connector,
-    connectorSizeUSB: c.connectorSizeUSB,
-    connectorIndex: c.connectorIndex,
+    connectors: c.connectors,
+    connectorIndex: side == 'left' ? c.connectorLeftIndex : c.connectorRightIndex,
     microcontroller: c.microcontroller,
     microcontrollerAngle: c.microcontrollerAngle,
     fastenMicrocontroller: c.fastenMicrocontroller,
-    wristRest: c.wristRestEnable ? { ...c.wristRestProps } : undefined,
+    wristRestLeft: c.wristRestEnable
+      ? {
+        angle: c.wristRestProps.angle,
+        taper: c.wristRestProps.taper,
+        tenting: c.wristRestProps.tenting,
+        slope: c.wristRestProps.slope,
+
+        maxWidth: c.wristRestProps.maxWidthLeft,
+        extension: c.wristRestProps.extensionLeft,
+      }
+      : undefined,
+    wristRestRight: c.wristRestEnable
+      ? {
+        angle: c.wristRestProps.angle,
+        taper: c.wristRestProps.taper,
+        tenting: c.wristRestProps.tenting,
+        slope: c.wristRestProps.slope,
+
+        maxWidth: c.wristRestProps.maxWidthRight,
+        extension: c.wristRestProps.extensionRight,
+      }
+      : undefined,
     wristRestOrigin: new ETrsf().translate(wrPos[0] / 10, wrPos[1] / 10, wrPos[2] / 10),
     shell: c.shell,
   }
@@ -450,11 +520,11 @@ export function decodeVariant(type: CuttleKey['type'], variant: number): Record<
     }
   } else if (type == 'trackball') {
     const size = variant & 0x7
-    const bearings = (variant >> 3) & 0x3
-    const sensor = (variant >> 5) & 0x3
+    const bearings = (variant >> 3) & 0x7
+    const sensor = (variant >> 6) & 0x3
     return {
       size: ['34mm', '25mm'][size] || '34mm',
-      bearings: ['Roller', 'Ball'][bearings] || 'Roller',
+      bearings: ['Roller', 'Ball', 'BTU (7.5mm)', 'BTU (9mm)'][bearings] || 'Roller',
       sensor: ['Joe'][sensor] || 'Joe',
     }
   }
@@ -466,9 +536,9 @@ export function encodeVariant(type: CuttleKey['type'], variant: Record<string, a
     return ['23mm', '35mm', '40mm'].indexOf(variant.size)
   } else if (type == 'trackball') {
     const size = ['34mm', '25mm'].indexOf(variant.size)
-    const bearings = ['Roller', 'Ball'].indexOf(variant.bearings)
+    const bearings = ['Roller', 'Ball', 'BTU (7.5mm)', 'BTU (9mm)'].indexOf(variant.bearings)
     const sensor = ['Joe'].indexOf(variant.sensor)
-    return size + (bearings << 3) + (sensor << 5)
+    return size + (bearings << 3) + (sensor << 6)
   }
   return undefined
 }

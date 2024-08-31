@@ -14,7 +14,7 @@ enumeration('PART', {
   0: null, // Special type for inheriting the global type
   1: 'mx-better',
   2: 'mx-pcb',
-  // 3: 'mx-pcb-twist',
+  3: 'mx-pcb-twist',
   4: 'mx-hotswap',
   5: 'alps',
   6: 'choc',
@@ -41,11 +41,14 @@ enumeration('PART', {
   115: 'old-mx-snap-in-hotswap',
 })
 
-enumeration('PROFILE', [null, 'xda', 'dsa', 'choc', 'sa', 'mt3', 'oem', 'des', 'cherry'])
+enumeration('PROFILE', [null, 'xda', 'dsa', 'choc', 'sa', 'mt3', 'oem', 'des', 'cherry', 'ma'])
 enumeration('HOMING', [null, 'thumb', 'index', 'middle', 'ring', 'pinky'])
 
+// These two are deprecated
 enumeration('CONNECTOR_TYPE', [null, 'usb', 'trrs'])
 enumeration('CONNECTOR_SIZE', ['slim', 'average', 'big'])
+
+enumeration('CONNECTOR_PRESET', ['custom', 'usb-slim', 'usb-average', 'usb-big', 'trrs'], true)
 
 enumeration('SCREW_TYPE', ['screw insert', 'tapered screw insert', 'expanding screw insert', 'tapped hole'])
 enumeration('SCREW_SIZE', ['M3', 'M4', '#4-40', '#6-32'])
@@ -68,6 +71,7 @@ enumeration('MICROCONTROLLER_NAME', [
   'seeed-studio-xiao-nrf52840',
   'waveshare-rp2040-zero',
   'weact-studio-ch552t',
+  'feather-rp2040-adafruit',
 ])
 
 struct('PartVariant', {

@@ -24,6 +24,7 @@
     type TempConfig,
     showGizmo,
     enableUndo,
+    showGrid,
   } from '$lib/store'
   import HandModel from '$lib/3d/HandModel.svelte'
   import { FINGERS, type Joints, SolvedHand } from '../hand'
@@ -94,7 +95,7 @@
   import { TupleStore } from '../editor/tuple'
   import DecimalInputInherit from '../editor/DecimalInputInherit.svelte'
   import SelectInherit from '$lib/presentation/SelectInherit.svelte'
-  import { PART_INFO } from '$lib/geometry/socketsParts'
+  import { PART_INFO, sortedCategories } from '$lib/geometry/socketsParts'
   import AngleInput from '../editor/AngleInput.svelte'
   import AngleInputInherit from '../editor/AngleInputInherit.svelte'
   import { browser } from '$app/environment'
@@ -383,7 +384,7 @@
   $: if ($clickedKey != null)
     lrotationStore.update(nthKey($tempConfig, $clickedKey).cluster.rotation || 0n)
 
-  // $: floorZ = geometry.right?.floorZ ?? 0
+  $: floorZ = $showGrid ? (geometry.right || geometry.unibody)?.floorZ ?? 0 : 0
   $: keyIsClicked = $clickedKey == null ? null : nthKey($protoConfig, $clickedKey).key
   $: columnIsClicked = $clickedKey == null ? null : nthKey($protoConfig, $clickedKey).column
   $: clusterIsClicked = $clickedKey == null ? null : nthKey($protoConfig, $clickedKey).cluster
@@ -716,7 +717,7 @@
               on:change={changeKey}
               value={nthPartType($protoConfig, $clickedKey, $selectMode)}
             >
-              {#each [...new Set(Object.values(PART_INFO).map((p) => p.category))] as cat}
+              {#each sortedCategories as cat}
                 <optgroup label={cat}>
                   {#each notNull(Object.values(PART)).filter((v) => PART_INFO[v].category == cat) as part}
                     <option value={part}>{PART_INFO[part].partName}</option>
@@ -909,6 +910,7 @@
                         <option value={3}>R3</option>
                         <option value={2}>R2</option>
                         <option value={1}>R1</option>
+                        <option value={0}>R0</option>
                       </Select>
                     {:else if keyIsHovered}<span class="fallback">{'R' + keyIsHovered.profile.row}</span>
                     {:else}<span class="fallback">-</span>{/if}
@@ -1447,11 +1449,14 @@
   {#if $showGizmo}
     <Gizmo verticalPlacement="top" horizontalPlacement="left" paddingX={50} paddingY={50} />
   {/if}
-  <!-- <T.GridHelper
-    args={[150, 10, 0x888888]}
-    position.z={floorZ - center[2]}
-    rotation={[-Math.PI / 2, 0, 0]}
-  /> -->
+  {#if $showGrid}
+    <T.GridHelper
+      args={[$view == 'both' ? 400 : 300, $view == 'both' ? 40 : 30, 0x888888]}
+      position.z={floorZ - (Object.values(center)[0] || [0, 0, 0])[2]}
+      rotation={[-Math.PI / 2, 0, 0]}
+    />
+  {/if}
+  <!--  -->
 </NewViewer>
 {#if $debugViewport}
   <div

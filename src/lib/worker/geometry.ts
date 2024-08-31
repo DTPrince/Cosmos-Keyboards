@@ -1061,7 +1061,7 @@ function findClosestWall(
 }
 
 function findBoardWalls(c: Cuttleform, walls: WallCriticalPoints[], origin: Trsf, select: string[], worldZ: Vector, bottomZ: number, optimize = false) {
-  const hBnd = localHolderBounds(c, true)
+  const hBnd = localHolderBounds(c, false) // was true before, but really needs to be false so board walls don't block the connector
   const bottomRadius = screwInsertDimensions(c).outerBottomRadius
 
   const p1 = new Vector(hBnd.minx - bottomRadius, hBnd.maxy, 0)
@@ -1112,7 +1112,7 @@ export interface LabeledBoardInd {
 }
 
 interface ScoreParams {
-  kiMax: number
+  heightMax: number
   insertHeight: number
   minDisplacement: number
   minHolderDisp: number
@@ -1124,7 +1124,7 @@ interface ScoreParams {
 }
 
 function screwScoreStilts(c: Cuttleform, walls: WallCriticalPoints[], s: number, params: ScoreParams) {
-  const { kiMax, insertHeight, minDisplacement, minHolderDisp, boardInd, holderBnd, worldZ, bottomZ } = params
+  const { heightMax, insertHeight, minDisplacement, minHolderDisp, boardInd, holderBnd, worldZ, bottomZ } = params
   // The score is based on how high the key is and displacement from the nearest
   // neighboring screw insert
   const idx = Math.floor(s)
@@ -1228,14 +1228,14 @@ function maxTip(c: Cuttleform, screwIndices: number[], walls: WallCriticalPoints
 }
 
 function screwScore(c: Cuttleform, walls: WallCriticalPoints[], s: number, params: ScoreParams) {
-  const { kiMax, insertHeight, minDisplacement, boardInd, holderBnd, bottomZ, worldZ } = params
+  const { heightMax, insertHeight, minDisplacement, boardInd, holderBnd, bottomZ, worldZ } = params
   // The score is based on how high the key is and displacement from the nearest
   // neighboring screw insert
   const idx = Math.floor(s)
   const avgKi = walls[idx].ki.origin().lerp(walls[(idx + 1) % walls.length].ki.origin(), s - idx)
   const avgHeight = avgKi.dot(worldZ) - bottomZ
   if (avgHeight < insertHeight) return -Infinity
-  const height = Math.sqrt(avgHeight / kiMax)
+  const height = Math.sqrt(avgHeight / heightMax)
   let nearestDispl = Infinity
   for (const i of params.otherPositions) {
     const diff = Math.abs(i - s)
@@ -1305,7 +1305,7 @@ export function* allScrewIndices(
       if (positions.has(iCenter)) continue
       const fn = c.shell.type == 'stilts' ? screwScoreStilts : screwScore
       const sc = fn(c, walls, iCenter, {
-        kiMax,
+        heightMax: kiMax - bottomZ,
         insertHeight,
         minDisplacement,
         boardInd,
@@ -1444,13 +1444,13 @@ function transformCriticalPoint(pt: WallCriticalPoints, trsf: Trsf): WallCritica
   }
 }
 
-export function wristRestGeometry(c: Cuttleform, geo: Geometry) {
-  if (!c.wristRest) throw new Error('Wrist rest is not enabled')
+export function wristRestGeometry(c: Cuttleform, geo: Geometry, wrSide: 'wristRestRight' | 'wristRestLeft') {
+  if (!c[wrSide]) throw new Error('Wrist rest is not enabled')
 
   // Form the wrist rest by considering all walls roated by the wrist rest angle
   // At the end of the function, everything is rotated back.
   const origin = new ETrsf(c.wristRestOrigin.history).evaluate({ flat: false }).xyz()
-  const walls = geo.allWallCriticalPoints().map(p => transformCriticalPoint(p, new Trsf().rotate(-c.wristRest!.angle, origin, [0, 0, 1])))
+  const walls = geo.allWallCriticalPoints().map(p => transformCriticalPoint(p, new Trsf().rotate(-c[wrSide]!.angle, origin, [0, 0, 1])))
 
   const xMin = new Set<number>()
   const xMax = new Set<number>()
@@ -1467,8 +1467,8 @@ export function wristRestGeometry(c: Cuttleform, geo: Geometry) {
   })
   const midFrontWall = frontWalls[Math.floor(frontWalls.length / 2)]
 
-  const left = Math.max(origin[0] - c.wristRest.maxWidth / 2, Math.min(...xMin))
-  const right = Math.min(origin[0] + c.wristRest.maxWidth / 2, Math.max(...xMax))
+  const left = Math.max(origin[0] - c[wrSide].maxWidth / 2, Math.min(...xMin))
+  const right = Math.min(origin[0] + c[wrSide].maxWidth / 2, Math.max(...xMax))
   if (left > right) throw new Error('Wrist rest is not wide enough')
 
   const leftWallY = wallXToY(walls, left, walls.indexOf(midFrontWall), 1, -1, 'to')
@@ -1478,9 +1478,9 @@ export function wristRestGeometry(c: Cuttleform, geo: Geometry) {
 
   if (!leftWallY || !rightWallY || !leftWallY2 || !rightWallY2) throw new Error('Could not locate walls for wrist rest')
 
-  const sinAngle = Math.sin(c.wristRest.taper * Math.PI / 180)
-  const cosAngle = Math.cos(c.wristRest.taper * Math.PI / 180)
-  const tanAngle = Math.tan(c.wristRest.taper * Math.PI / 180)
+  const sinAngle = Math.sin(c[wrSide].taper * Math.PI / 180)
+  const cosAngle = Math.cos(c[wrSide].taper * Math.PI / 180)
+  const tanAngle = Math.tan(c[wrSide].taper * Math.PI / 180)
 
   const leftStart = new Vector(left, Math.max(leftWallY.y, leftWallY2.y), 0)
   const rightStart = new Vector(right, Math.max(rightWallY.y, rightWallY2.y), 0)
@@ -1498,7 +1498,7 @@ export function wristRestGeometry(c: Cuttleform, geo: Geometry) {
   }
 
   const minY = Math.min(leftStart.y, rightStart.y)
-  const length = minY - origin[1] + c.wristRest.extension
+  const length = minY - origin[1] + c[wrSide].extension
   const leftLength = (length + leftStart.y - minY) / cosAngle
   const rightLength = (length + rightStart.y - minY) / cosAngle
 
@@ -1511,7 +1511,7 @@ export function wristRestGeometry(c: Cuttleform, geo: Geometry) {
     rightEnd.x = middle + 10
     // throw new Error('Wrist rest width is not big enough to support taper angle')
   }
-  const rotateBack = new Trsf().rotate(c.wristRest!.angle, origin, [0, 0, 1])
+  const rotateBack = new Trsf().rotate(c[wrSide]!.angle, origin, [0, 0, 1])
   return {
     leftStart: rotateBack.apply(leftStart),
     leftEnd: rotateBack.apply(leftEnd),

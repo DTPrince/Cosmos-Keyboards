@@ -1,6 +1,7 @@
-import type { Cuttleform } from '$lib/worker/config'
+import { convertToMaybeCustomConnectors, type Cuttleform } from '$lib/worker/config'
 import { Vector } from '$lib/worker/modeling/transformation'
 
+import type { ConnectorMaybeCustom, CustomConnector } from '$lib/worker/config.cosmos'
 import { PLATE_HEIGHT, screwInsertDimensions } from '$lib/worker/model'
 import { closestScrewHeight, SCREWS } from './screws'
 
@@ -8,6 +9,7 @@ const STOPPER_HEIGHT = 2 // Size of stopper used to align board
 export const STOPPER_WIDTH = 2
 const RAIL_WIDTH = 1.5 // Size of rails to add around the board
 const RAIL_RADIUS = 1 // How far in the rails stick
+const BACKSTOP_HEIGHT = 0.5 // How much extra backstop height to add
 
 const IN = 25.4 // in to mm
 
@@ -41,6 +43,8 @@ interface BoardProperties {
   rearPins?: number
   /** If the microcontroller has castellated holes. */
   castellated?: boolean
+  /** Override height of the backstop. */
+  backstopHeight?: number
 }
 
 type Microcontroller = Exclude<Cuttleform['microcontroller'], null>
@@ -202,9 +206,11 @@ export const BOARD_PROPERTIES: Record<Microcontroller, BoardProperties> = {
     sidecutout: 3.1,
     sidePins: 10,
   },
-  'adafruit-rp2040-feather': {
-    name: 'Adafruit rp2040 feather (USB-C)',
+  'feather-rp2040-adafruit': {
+    name: 'Adafruit RP2040 Feather',
+    extraName: '(USB-C)',
     size: new Vector(0.9 * IN, 2 * IN, 1.57),
+    sizeName: 'Large',
     boundingBoxZ: 0.28 * IN,
     offset: new Vector(0, 0, 1.835),
     tappedHoleDiameter: 0.1 * IN,
@@ -212,6 +218,7 @@ export const BOARD_PROPERTIES: Record<Microcontroller, BoardProperties> = {
     cutouts: [],
     sidecutout: 0.1 * IN,
     sidePins: 16, // asymmetrical; only 12 on the I2C connector side
+    backstopHeight: 0,
   },
 }
 
@@ -254,7 +261,7 @@ export interface BoardElement {
     /** Width of the rails in mm */
     width: number
     /** Include a backstop so the part doesn't slip backwards */
-    backstop: boolean
+    backstopHeight: number
     /** The nubs that hold in the part */
     clamps: {
       side: 'left' | 'right' | 'back'
@@ -270,37 +277,51 @@ interface BoardOffset {
 
 export type Connector = 'trrs'
 
-export function boardOffsetInfo(config: Cuttleform): BoardOffset {
-  if (!config.connector) return { connectors: [] }
-  switch (config.connector) {
-    case 'trrs':
-      return {
-        connectors: [
-          {
-            model: 'trrs',
-            offset: config.microcontroller && BOARD_PROPERTIES[config.microcontroller].sizeName == 'Large'
-              ? new Vector(-16.5, 0, 2.5) // Extra space for large microcontrollers
-              : new Vector(-14.5, 0, 2.5),
-
-            size: new Vector(6.1, 12.2, 5),
-            boundingBoxZ: 6,
-            rails: {
-              width: RAIL_WIDTH,
-              backstop: true,
-              clamps: [
-                { side: 'left', radius: 0.4 },
-                { side: 'right', radius: 0.4 },
-                { side: 'back', radius: RAIL_RADIUS * 1.5 },
-              ],
-            },
-          },
-        ],
-      }
-    case 'usb':
-      return { connectors: [] }
-    default:
-      throw new Error(`Connector type ${config.connector} is not supported`)
+export function convertToCustomConnectors(c: Cuttleform, conn: ConnectorMaybeCustom): CustomConnector {
+  if (conn.preset == 'trrs') {
+    return {
+      width: 6.4,
+      height: 6.4,
+      radius: 3.2,
+      x: conn.x ?? (c.microcontroller && BOARD_PROPERTIES[c.microcontroller].sizeName == 'Large' ? -16.5 : -14.5),
+      y: 5,
+    }
   }
+  if (conn.preset == 'usb') {
+    return {
+      width: { slim: 10.5, average: 12, big: 13 }[conn.size],
+      height: { slim: 6.5, average: 7, big: 8 }[conn.size],
+      radius: 3,
+      x: conn.x ?? 0,
+      y: 5,
+    }
+  }
+  return conn
+}
+
+export function boardOffsetInfo(config: Cuttleform): BoardOffset {
+  let elements: BoardElement[] = []
+  const connectors = convertToMaybeCustomConnectors(config)
+  if (connectors.find(c => c.preset == 'trrs')) {
+    elements.push({
+      model: 'trrs',
+      offset: config.microcontroller && BOARD_PROPERTIES[config.microcontroller].sizeName == 'Large'
+        ? new Vector(-16.5, 0, 2.5) // Extra space for large microcontrollers
+        : new Vector(-14.5, 0, 2.5),
+      size: new Vector(6.1, 12.2, 5),
+      boundingBoxZ: 6,
+      rails: {
+        width: RAIL_WIDTH,
+        backstopHeight: BACKSTOP_HEIGHT,
+        clamps: [
+          { side: 'left', radius: 0.4 },
+          { side: 'right', radius: 0.4 },
+          { side: 'back', radius: RAIL_RADIUS * 1.5 },
+        ],
+      },
+    })
+  }
+  return { connectors: elements }
 }
 
 export function boardElements(config: Cuttleform, layout: boolean): BoardElement[] {
@@ -317,7 +338,7 @@ export function boardElements(config: Cuttleform, layout: boolean): BoardElement
       boundingBoxZ: BOARD_PROPERTIES[config.microcontroller].boundingBoxZ,
       rails: {
         width: RAIL_WIDTH,
-        backstop: true,
+        backstopHeight: BOARD_PROPERTIES[config.microcontroller].backstopHeight ?? BACKSTOP_HEIGHT,
         clamps: [
           { side: 'left', radius: RAIL_RADIUS },
           { side: 'right', radius: RAIL_RADIUS },
@@ -339,9 +360,16 @@ export function boardConnectorOffset(config: Cuttleform): Vector {
 const sizePlusRails = (b: BoardElement) => b.size.x + (b.rails?.width || 0) * 2
 export function localHolderBounds(c: Cuttleform, layout: boolean) {
   const elements = boardElements(c, layout)
+  const connectors = layout ? [] : convertToMaybeCustomConnectors(c).map(conn => convertToCustomConnectors(c, conn))
   return {
-    minx: Math.min(...elements.map(conn => conn.offset.x - sizePlusRails(conn) / 2)),
-    maxx: Math.max(...elements.map(conn => conn.offset.x + sizePlusRails(conn) / 2)),
+    minx: Math.min(
+      ...elements.map(conn => conn.offset.x - sizePlusRails(conn) / 2),
+      ...connectors.map(conn => conn.x - conn.width / 2),
+    ),
+    maxx: Math.max(
+      ...elements.map(conn => conn.offset.x + sizePlusRails(conn) / 2),
+      ...connectors.map(conn => conn.x + conn.width / 2),
+    ),
     miny: Math.min(...elements.map(conn => conn.offset.y - conn.size.y)) - STOPPER_HEIGHT,
     maxy: Math.max(...elements.map(conn => conn.offset.y)),
   }

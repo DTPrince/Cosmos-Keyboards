@@ -38,6 +38,7 @@
     fromCosmosConfig,
     mirrorCluster,
     toCosmosConfig,
+    type ConnectorMaybeCustom,
     type CosmosKeyboard,
     type PartType,
   } from '$lib/worker/config.cosmos'
@@ -52,6 +53,8 @@
   import {
     clusterAngle,
     clusterSeparation,
+    connectorsString,
+    getNKeys,
     getSize,
     getThumbN,
     isThumb,
@@ -62,10 +65,14 @@
   } from './visualEditorHelpers'
   import { mdiCodeJson, mdiPencil } from '@mdi/js'
   import Icon from '$lib/presentation/Icon.svelte'
+  import Dialog from '$lib/presentation/Dialog.svelte'
+  import ConnectorsView from '../dialogs/ConnectorsView.svelte'
 
   export let cosmosConf: CosmosKeyboard
   export let conf: FullCuttleform
   export let basic: boolean
+
+  let connectorView = false
 
   $: protoConfig.set(cosmosConf)
   $: conf = fromCosmosConfig($protoConfig)
@@ -77,7 +84,7 @@
   }
 
   let lastMicrocontroller: MicrocontrollerName = 'kb2040-adafruit'
-  let lastConnector: ConnectorType = 'trrs'
+  let lastConnectors: ConnectorMaybeCustom[] = [{ preset: 'trrs' }, { preset: 'usb', size: 'average' }]
   let lastScrews: number[] = [-1, -1, -1, -1, -1, -1, -1]
 
   function setSize(rows: number, cols: number) {
@@ -90,17 +97,17 @@
     if (originalSize.rows == 0) {
       $protoConfig.wristRestEnable = true
       $protoConfig.microcontroller = lastMicrocontroller
-      $protoConfig.connector = lastConnector
+      $protoConfig.connectors = lastConnectors
       $protoConfig.screwIndices = lastScrews
     } else {
       lastMicrocontroller = $protoConfig.microcontroller
-      lastConnector = $protoConfig.connector
+      lastConnectors = $protoConfig.connectors
       lastScrews = $protoConfig.screwIndices
     }
     if (rows == 0) {
       $protoConfig.wristRestEnable = false
       $protoConfig.microcontroller = null
-      $protoConfig.connector = null
+      $protoConfig.connectors = []
       $protoConfig.screwIndices = []
     }
   }
@@ -123,8 +130,8 @@
     else if (type == 'tilt')
       $protoConfig.shell = {
         type: 'tilt',
-        tilt: $rotationY / 2,
-        raiseBy: 10,
+        tilt: $rotationY * 0.4,
+        raiseBy: 3,
         pattern: [10, 5],
       }
     else if (type == 'stilts')
@@ -143,9 +150,9 @@
       $protoConfig.microcontroller != null &&
       BOARD_PROPERTIES[$protoConfig.microcontroller].extraName?.toLowerCase().includes('bluetooth')
 
-    if ($protoConfig.microcontroller == null) $protoConfig.connector = null
-    else if (isBluetooth) $protoConfig.connector = 'usb'
-    else $protoConfig.connector = 'trrs'
+    if ($protoConfig.microcontroller == null) $protoConfig.connectors = []
+    else if (isBluetooth) $protoConfig.connectors = [{ preset: 'usb', size: 'average' }]
+    else $protoConfig.connectors = [{ preset: 'trrs' }, { preset: 'usb', size: 'average' }]
   }
 
   let lastSwitch: PartType['type'] = 'mx-better'
@@ -243,6 +250,26 @@
       const splitInd = newInd.split(',').map(Number)
       if (splitInd.some(isNaN)) return
       $protoConfig.screwIndices = splitInd
+    }
+  }
+
+  function setTiltPillarsEnabled(e: Event) {
+    if ($protoConfig.shell.type != 'tilt') return
+    if ((e.target as HTMLInputElement).checked) $protoConfig.shell.pattern = [10, 5]
+    else $protoConfig.shell.pattern = null
+  }
+
+  function enterPattern() {
+    if ($protoConfig.shell.type != 'tilt') return
+    const ind = $protoConfig.shell.pattern?.join(',')
+    const newInd = prompt(
+      'Enter the lengths of pillars and gaps in the pattern separated by commas. For example: 10, 5.',
+      ind
+    )
+    if (newInd) {
+      const splitInd = newInd.split(',').map(Number)
+      if (splitInd.some(isNaN)) return
+      $protoConfig.shell.pattern = splitInd
     }
   }
 
@@ -363,6 +390,32 @@
       <DecimalInput bind:value={$protoConfig.curvature.verticalSpacing} units="mm" />
     </Field>
   {/if}
+  {#if $protoConfig.partType.type == 'mx-pcb'}
+    <InfoBox>
+      <p class="mb-1">
+        This variant requires the Amoeba King PCB. The board should fit snug within the guides. Friction
+        holds the sockets onto the switch, but you can reinforce using glue/epoxy. I don't recommend it,
+        but you can also use two 3/16 in #0-80 screws or two 4–5 mm M1.6 screws for each key ({getNKeys(
+          $protoConfig,
+          'mx-pcb'
+        ) * 2} screws total).
+      </p>
+      <p>
+        To fasten, screw down forcefully so the screws carve threads into the plastic. For hard plastics,
+        you'll need to tap the holes.
+      </p>
+    </InfoBox>
+  {:else if $protoConfig.partType.type == 'mx-hotswap'}
+    <InfoBox>
+      <p>
+        This variant requires Kailh MX hotswap sockets and a well-tuned 3D printer. Alternatives are <a
+          class="text-pink-600 underline"
+          href="https://www.printables.com/model/158559">these printable hotswap sockets</a
+        >, together with the MX-Compatible (no hotswap) setting, but they don't grip as well as the Kailh
+        MX sockets.
+      </p>
+    </InfoBox>
+  {/if}
 </Section>
 <!---<svelte:fragment slot="content">
     {#each schema.upperKeys.fields as key}
@@ -374,30 +427,6 @@
         />
       {/if}
     {/each}
-    {#if cosmosConf.upperKeys.switchType == SWITCH.MX_PCB}
-      <InfoBox>
-        <p class="mb-1">
-          This variant requires the Amoeba King PCB. The board should fit snug within the guides.
-          Friction holds the sockets onto the switch, but you can reinforce using glue/epoxy, two
-          3/16 in #0-80 screws or two 4–5 mm M1.6 screws for each key ({conf.keys.length * 4} screws
-          total).
-        </p>
-        <p>
-          To fasten, screw down forcefully so the screws carve threads into the plastic. For hard
-          plastics, you'll need to tap the holes.
-        </p>
-      </InfoBox>
-    {:else if cosmosConf.upperKeys.switchType == SWITCH.MX_HOTSWAP}
-      <InfoBox>
-        <p>
-          This variant requires Kailh MX hotswap sockets and a well-tuned 3D printer. Alternatives
-          are <a class="text-pink-600 underline" href="https://www.printables.com/model/158559"
-            >these printable hotswap sockets</a
-          >, together with the MX-Compatible (no hotswap) setting, but they don't grip as well as
-          the Kailh MX sockets.
-        </p>
-      </InfoBox>
-    {/if}
   </svelte:fragment>
 </Section>
 -->
@@ -768,35 +797,72 @@
       >Tilting Base</Preset
     >
   </div>
-  {#if $protoConfig.shell.type == 'tilt'}
+  {#if $protoConfig.shell.type == 'basic'}
+    {#if !basic}
+      <Field name="Add Lip" help="Add a lip to the bottom plate to hide warping defects">
+        <Checkbox bind:value={$protoConfig.shell.lip} />
+      </Field>
+    {/if}
+  {:else if $protoConfig.shell.type == 'stilts'}
+    <Field name="Tuck in Bottom Plate">
+      <Checkbox bind:value={$protoConfig.shell.inside} />
+    </Field>
+  {:else if $protoConfig.shell.type == 'tilt'}
     <InfoBox>
       The Tilting Base helps you achieve high tenting angles without needing to print as much support.
       Make sure to print the plate in two parts so that the bottom can be removed for access.
     </InfoBox>
+    <Field name="Case Tenting Angle" icon="angle">
+      {#if typeof $protoConfig.shell.tilt == 'number'}
+        <AngleInput bind:value={$protoConfig.shell.tilt} />
+      {:else}
+        <InfoBox>
+          The tilt angle is currently configured as a vector, which can only be edited in Expert Mode.
+        </InfoBox>
+      {/if}
+    </Field>
+    {#if !basic}<div class="relative">
+        <div class="absolute right-48 top--1.5">
+          <button class="button" on:click={enterPattern}><Icon path={mdiCodeJson} /></button>
+        </div>
+        <Field name="Use Pillars">
+          <Checkbox value={$protoConfig.shell.pattern != null} on:change={setTiltPillarsEnabled} />
+        </Field>
+      </div>
+      <Field name="Raise Case By" icon="expand-vertical">
+        <DecimalInput bind:value={$protoConfig.shell.raiseBy} units="mm" />
+      </Field>
+    {/if}
   {/if}
   {#if !basic}
     <Field name="Connectivity" icon="usb-port">
-      <Select bind:value={$protoConfig.connector}>
+      <!-- <Select bind:value={$protoConfig.connector}>
         <option value="trrs">TRRS and USB</option>
         <option value="usb">USB only</option>
         <option value={null}>None</option>
-      </Select>
+      </Select> -->
+      <button class="button my-0! py-0.5! mx-2! w-44" on:click={() => (connectorView = true)}>
+        {connectorsString($protoConfig.connectors)}
+      </button>
     </Field>
-    <Field name="USB Connector Size">
-      <Select bind:value={$protoConfig.connectorSizeUSB}>
-        <option value="slim">Slim (Apple cables)</option>
-        <option value="average">Average (most cables)</option>
-        <option value="big">Big (fits everything)</option>
-      </Select>
-    </Field>
-    <Field
-      name="Connector Index"
-      help="Position of the microcontroller and connector, expressed as a wall index. See expert mode documentation for details."
-    >
-      <DecimalInput bind:value={$protoConfig.connectorIndex} />
-    </Field>
+    {#if $protoConfig.unibody}
+      <Field
+        name="Connector Index"
+        help="Position of the microcontroller and connector, expressed as a wall index. See expert mode documentation for details."
+      >
+        <DecimalInput bind:value={$protoConfig.connectorRightIndex} />
+      </Field>
+    {:else}
+      <Field
+        name="Connector Index (L/R)"
+        help="Position of the microcontroller and connector, expressed as a wall index. See expert mode documentation for details."
+      >
+        <DecimalInput bind:value={$protoConfig.connectorLeftIndex} class="w-[5.2rem]" />
+        <DecimalInput bind:value={$protoConfig.connectorRightIndex} class="w-[5.2rem]" />
+      </Field>
+    {/if}
   {/if}
-  {#if $protoConfig.connectorIndex != -1}
+  {#if $protoConfig.connectorRightIndex != -1 || (!$protoConfig.unibody && $protoConfig.connectorLeftIndex != -1)}
     <InfoBox>
       The microcontroller and connector are manually placed in this model. Set Advanced &rarr; Connector
       Index to -1 to automatically place them.
@@ -993,12 +1059,14 @@
       <DecimalInput bind:value={$wrPositionZ} supersmall />
     </Field>
 
-    <Field name="Wrist Rest Max Width">
-      <DecimalInput bind:value={$protoConfig.wristRestProps.maxWidth} units="mm" />
+    <Field name="Wrist Rest Max Width (L/R)">
+      <DecimalInput bind:value={$protoConfig.wristRestProps.maxWidthLeft} class="w-[5.2rem]" />
+      <DecimalInput bind:value={$protoConfig.wristRestProps.maxWidthRight} class="w-[5.2rem]" />
     </Field>
 
-    <Field name="Wrist Rest Extension">
-      <DecimalInput bind:value={$protoConfig.wristRestProps.extension} units="mm" />
+    <Field name="Wrist Rest Extension (L/R)">
+      <DecimalInput bind:value={$protoConfig.wristRestProps.extensionLeft} class="w-[5.2rem]" />
+      <DecimalInput bind:value={$protoConfig.wristRestProps.extensionRight} class="w-[5.2rem]" />
     </Field>
 
     <Field name="Wrist Rest Attachment Angle">
@@ -1018,6 +1086,13 @@
     </Field>
   {/if}
 </Section>
+
+{#if connectorView}
+  <Dialog on:close={() => (connectorView = false)}>
+    <span slot="title">Edit Connectors</span>
+    <div slot="content"><ConnectorsView bind:connectors={$protoConfig.connectors} /></div>
+  </Dialog>
+{/if}
 
 <style>
   .button {

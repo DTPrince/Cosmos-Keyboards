@@ -1,8 +1,6 @@
 import type manuform from '$assets/manuform.json'
 import { socketSize } from '$lib/geometry/socketsParts'
 import type { CuttleKey, MicrocontrollerName } from '$target/cosmosStructs'
-import { StiltsGeometry } from '@pro/stiltsGeo'
-import { Matrix4, Vector3 } from 'three'
 import {
   CONNECTOR,
   CONNECTOR_SIZE,
@@ -23,10 +21,12 @@ import {
   SCREW_SIZE,
   SCREW_TYPE,
   SWITCH,
-} from '../../../target/proto/cuttleform'
+} from '$target/proto/cuttleform'
+import { StiltsGeometry } from '@pro/stiltsGeo'
+import { Matrix4, Vector3 } from 'three'
 import type { FullGeometry } from '../../routes/beta/lib/viewers/viewer3dHelpers'
 import { BaseGeometry, BlockGeometry, TiltGeometry } from './cachedGeometry'
-import type { CosmosCluster, CosmosKey, CosmosKeyboard } from './config.cosmos'
+import type { ConnectorMaybeCustom, CosmosCluster } from './config.cosmos'
 import { estimatedBB, estimatedCenter } from './geometry'
 import { DEFAULT_MWT_FACTOR } from './geometry.thickWebs'
 import Trsf from './modeling/transformation'
@@ -39,7 +39,7 @@ type DeepRequired<T> = Required<
   }
 >
 
-export type { CuttleKey } from 'target/cosmosStructs'
+export type { CuttleKey } from '$target/cosmosStructs'
 export type CuttleformProto = DeepRequired<CuttleformProtoP>
 
 // const MANUFORM_KEYCAP_TYPE = "xda"
@@ -52,6 +52,22 @@ const X: Point = [1, 0, 0]
 const Y: Point = [0, 1, 0]
 const Z: Point = [0, 0, 1]
 
+interface WristRest {
+  /** Angle at which the wrist rest is attached to the keyboard */
+  angle: number
+  /** Angle at which the wrist rest sides are tapered inwards */
+  taper: number
+  /** Maximum width of the wrist rest */
+  maxWidth: number
+  /** Angle at which the wrist rest is tented */
+  tenting: number
+  /** Angle at which the wrist rests slopes down towards the wrist */
+  slope: number
+  /** Amount by which the wrist rests sticks out past the wrist */
+  extension: number
+  stilts?: boolean
+}
+
 export interface SpecificCuttleform<S> {
   wallThickness: number
   wallShrouding: number
@@ -62,8 +78,11 @@ export interface SpecificCuttleform<S> {
   keys: CuttleKey[]
   /** The basis on which to compute  */
   keyBasis: Keycap['profile']
-  connector: 'usb' | 'trrs' | null
-  connectorSizeUSB: 'slim' | 'average' | 'big'
+  connectors: ConnectorMaybeCustom[]
+  /** @deprecated */
+  connector?: 'usb' | 'trrs' | null
+  /** @deprecated */
+  connectorSizeUSB?: 'slim' | 'average' | 'big'
   /** The index of the wall by which the connector is placed. */
   connectorIndex: number
   /** The indices of the walls at which to place screw inserts. */
@@ -71,21 +90,8 @@ export interface SpecificCuttleform<S> {
   screwType: 'screw insert' | 'tapered screw insert' | 'expanding screw insert' | 'tapped hole'
   screwSize: 'M3' | 'M4' | '#4-40' | '#6-32'
   screwCountersink: boolean
-  wristRest?: {
-    /** Angle at which the wrist rest is attached to the keyboard */
-    angle: number
-    /** Angle at which the wrist rest sides are tapered inwards */
-    taper: number
-    /** Maximum width of the wrist rest */
-    maxWidth: number
-    /** Angle at which the wrist rest is tented */
-    tenting: number
-    /** Angle at which the wrist rests slopes down towards the wrist */
-    slope: number
-    /** Amount by which the wrist rests sticks out past the wrist */
-    extension: number
-    stilts?: boolean
-  }
+  wristRestLeft?: WristRest
+  wristRestRight?: WristRest
   wristRestOrigin: ETrsf
   microcontroller: MicrocontrollerName
   /* Angle at which microcontroller should be placed */
@@ -307,10 +313,25 @@ export function cuttleConf(c: DeepRequired<CuttleformProto>): Cuttleform {
       top: c.wall.roundedTop ? { horizontal: 1 / 4, vertical: 2 / 3 } : undefined,
       side: c.wall.roundedSide ? { divisor: 3, concavity: 1.5 } : undefined,
     },
-    connector: MAP_CONNECTOR[c.wall.connector],
-    connectorSizeUSB: MAP_CONNECTOR_SIZE[c.wall.connectorSizeUsb],
+    connectors: convertToMaybeCustomConnectors({
+      connector: MAP_CONNECTOR[c.wall.connector],
+      connectorSizeUSB: MAP_CONNECTOR_SIZE[c.wall.connectorSizeUsb],
+    } as any),
     connectorIndex: -1,
-    wristRest: c.wall.wristRest
+    wristRestRight: c.wall.wristRest
+      ? {
+        // length: c.wall.wristRestLength / 10,
+        maxWidth: c.wall.wristRestMaxWidth / 10,
+        // xOffset: c.wall.wristRestXOffset / 10,
+        // zOffset: c.wall.wristRestZOffset / 10,
+        angle: 0,
+        taper: c.wall.wristRestAngle / 45,
+        tenting: c.curvature.tenting / 45 / 2 + c.wall.wristRestTenting / 45,
+        slope: 5,
+        extension: 8,
+      }
+      : undefined,
+    wristRestLeft: c.wall.wristRest
       ? {
         // length: c.wall.wristRestLength / 10,
         maxWidth: c.wall.wristRestMaxWidth / 10,
@@ -1500,12 +1521,12 @@ export function fullEstimatedCenter(geo: FullGeometry | undefined, withWristRest
   const defaultCenter = { left: [0, 0, 0] as Point, unibody: [0, 0, 0] as Point, right: [0, 0, 0] as Point }
   if (!geo) return { left: defaultCenter, both: defaultCenter, right: defaultCenter }
   if (geo.unibody) {
-    const center = estimatedCenter(geo.unibody, withWristRest && !!geo.unibody!.c.wristRest)
+    const center = estimatedCenter(geo.unibody, withWristRest && !!geo.unibody!.c.wristRestRight)
     const modelCenters = { unibody: center }
     return { left: modelCenters, both: modelCenters, right: modelCenters }
   } else {
-    const leftBB = estimatedBB(geo.left!, withWristRest && !!geo.left!.c.wristRest)
-    const rightBB = estimatedBB(geo.right!, withWristRest && !!geo.right!.c.wristRest)
+    const leftBB = estimatedBB(geo.left!, withWristRest && !!geo.left!.c.wristRestRight)
+    const rightBB = estimatedBB(geo.right!, withWristRest && !!geo.right!.c.wristRestRight)
     const sepDiff = (VIEW_SEPARATION - (rightBB[0] + leftBB[0])) / 2
     return {
       left: {
@@ -1547,4 +1568,12 @@ export function fullEstimatedSize(geo: FullGeometry | undefined): Full<[number, 
       right: [rx2 - rx1, ry2 - ry1, rz2 - rz1],
     }
   }
+}
+
+export function convertToMaybeCustomConnectors(c: Cuttleform): ConnectorMaybeCustom[] {
+  if (c.connector === null) return []
+  if (c.connector && !c.connectorSizeUSB) throw new Error('connectorSizeUSB not defined')
+  if (c.connector === 'usb') return [{ preset: 'usb', size: c.connectorSizeUSB! }]
+  if (c.connector === 'trrs') return [{ preset: 'trrs' }, { preset: 'usb', size: c.connectorSizeUSB! }]
+  return c.connectors
 }
