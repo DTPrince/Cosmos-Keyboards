@@ -175,6 +175,15 @@ export const PART_INFO: Record<CuttleKey['type'], PartInfo> = {
     socketSize: [11.6, 41.18, 2.84],
     partBottom: [box(11.5, 24.4, 4.3)],
   },
+  'oled-128x64-1.3in-adafruit': {
+    partName: 'Adafruit 128x64 1.3" OLED',
+    bomName: 'Adafruit 128x64 1.3" Diagonal OLEDs (938)',
+    category: 'Displays',
+    stepFile: '/src/assets/key-oled-128x64-1.3in-adafruit.step',
+    //  partOverride: '/src/assets/switch-oled-128x64-1.3in-adafruit.glb',
+    socketSize: [41, 39, 4],
+    partBottom: [box(41, 39, 7)],
+  },
   'trackball': {
     partName: 'Trackball',
     bomName: () => 'Trackballs',
