@@ -240,6 +240,15 @@ export const PART_INFO: Record<CuttleKey['type'], PartInfo> = {
     socketSize: [40, 45, 4],
     partBottom: [box(40, 45, 19.5)],
   },
+  'thumbstick-omron-micro-custom': {
+    partName: 'Thumbstick Omron microswitches',
+    bomName: 'Thumbstick Omron microswitches',
+    category: 'Joysticks',
+    stepFile: '/src/assets/key-thumbstick-omron-micro-custom.step',
+    partOverride: '/src/assets/switch-thumbstick-omron-micro-custom.glb',
+    socketSize: [30, 30, 5],
+    partBottom: [box(30, 30, 16.2)],
+  },
 }
 
 const CATEGORY_SORT = [

@@ -31,7 +31,7 @@ enumeration('PART', {
   22: 'trackball',
   23: 'trackpad-cirque',
   24: 'oled-128x64-1.3in-adafruit',
-  // 25: '',
+  25: 'thumbstick-omron-micro-custom',
 
   // Old stuff no one should be using.
   110: 'old-mx',
